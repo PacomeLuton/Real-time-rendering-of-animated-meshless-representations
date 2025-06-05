@@ -1,0 +1,37 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+layout( local_size_x = 1) in;
+
+layout( set = 0, binding = 5 ) uniform guibuffer {
+  float time;
+  vec2 thetaPhi;
+};
+
+layout( set = 0, binding = 11) uniform writeonly image3D voxelGrid;
+layout( set = 0, binding = 12) uniform writeonly image3D movingvoxelGrid;
+
+
+void main() {
+    ivec3 idd = ivec3(gl_WorkGroupID.xyz);
+    vec3 pos = vec3(idd) / vec3(gl_NumWorkGroups.xyz-1) * vec3(2,2,2) - vec3(1,1,1); 
+
+    vec4 color = vec4((pos+1)/2,0);
+
+    float d = 0;
+
+    float corps = mapArlo(pos*4).x/4;
+    if (corps > 0) d=(corps + smootherstep(0.1,0.,min(corps/0.019,1))*(fbm(ivec3(40), 3, (pos+1)/2)+0.2))/4;
+    else d = (corps + 0.1*(fbm(ivec3(40), 3, (pos+1)/2)+0.2))/4;
+
+    //d = map(pos);//mapArlo(pos*4).x/4;
+    color = vec4(d);    
+    imageStore(voxelGrid,idd,color);
+
+    float d2 = (fbm(ivec3(40), 3, (pos+1)/2)+0.2);
+    color = vec4(d2);    
+    imageStore(movingvoxelGrid,idd,color);
+
+}

@@ -1,0 +1,261 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include "../commun.glsl"
+
+#define N 128
+layout( local_size_x = N) in;
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model;
+  mat4 view;
+  mat4 persp;
+  float nearplane;
+};
+
+struct tetIndices_t{
+  uint index[4];
+};
+
+layout( set = 0, binding = 1) buffer info{
+  int tetNumber;
+  int vertNumber;
+  int temptetNumber;
+  int temptemptetNumber;
+};
+
+layout( set = 0, binding = 2 ) buffer pos{
+  vec4 vertices[];
+};
+
+layout( set = 0, binding = 3 ) buffer ind{
+  uvec4 indices[];
+};
+
+layout( set = 0, binding = 4) buffer vertAttribut{
+  VA attributs[];
+};
+
+layout( set = 0, binding = 6 ) buffer ind2{
+  uvec4 temp_indices[];
+};
+
+
+struct tet_t{
+  vec4 pos[4];
+  vertexAttribut s[4];
+};
+
+struct prism_t{
+  vec4 pos[6];
+  vertexAttribut s[6];
+};
+
+ivec2 edges[] = {
+  ivec2(0,1),  //0
+  ivec2(0,2),  //1
+  ivec2(0,3),  //2
+  ivec2(1,2),  //3
+  ivec2(1,3),  //4
+  ivec2(2,3)   //5
+};
+
+
+void saveTet(uvec4 ind, tet_t tet){
+    for(int i = 0; i < 4; i++){
+        vertices[ind[i]] = tet.pos[i];
+        attributs[ind[i]] = tet.s[i];
+    }
+}
+
+void main() {
+    //le tet qu'on va traiter
+
+    uint tetIndex = gl_WorkGroupID.x*N+gl_LocalInvocationID.x;
+    if (tetIndex >= tetNumber) return;
+    uvec4 indice = indices[tetIndex]; //on récupere son indice
+
+    //debugPrintfEXT("Tet Indice : %i \n", tetIndex);
+    //debugPrintfEXT("i : %v4i \n", indices[tetIndex]);
+    //debugPrintfEXT("v0 : %v4f \n", vertices[indice[0]]);
+    //debugPrintfEXT("v1 : %v4f \n", vertices[indice[1]]);
+    //debugPrintfEXT("v2 : %v4f \n", vertices[indice[2]]);
+    //debugPrintfEXT("v3 : %v4f \n", vertices[indice[3]]);
+
+    //debugPrintfEXT("%i %i %i %i\n", tetNumber, vertNumber, temptetNumber, temptemptetNumber);
+
+    tet_t tet;
+
+    mat4 vm = view*model;
+    mat4 ivm = inverse(view*model);
+
+    // pour les 4 points du tetraedre, on calcul la position dans view, et on stock la deformation a ssocié
+    for(int i = 0; i < 4; i++){
+        tet.pos[i] = vm * vertices[indice[i]];
+        tet.s[i] = attributs[indice[i]];
+    }
+
+    float near = nearplane * 1.1;
+    bool clip[4];
+    uint clip_count = 0; 
+    
+    clip[0] = tet.pos[0].z < near;
+    clip_count+= int(clip[0]);
+    clip[1] = tet.pos[1].z < near;
+    clip_count+= int(clip[1]);
+    clip[2] = tet.pos[2].z < near;
+    clip_count+= int(clip[2]);
+    clip[3] = tet.pos[3].z < near;
+    clip_count+= int(clip[3]);
+
+    //Section facultatif pour faire du fustrum culling 
+    vec2 projpos[4];
+    for(int i = 0; i < 4; i++){
+        vec4 tempp = (persp * tet.pos[i]);
+        projpos[i] = tempp.xy / tempp.w;
+    }
+
+    bool doIclip = (projpos[0].x < -1 && projpos[1].x < -1 && projpos[2].x < -1 && projpos[3].x < -1);
+    doIclip = doIclip || (projpos[0].y < -1 && projpos[1].y < -1 && projpos[2].y < -1 && projpos[3].y < -1);
+    doIclip = doIclip || (projpos[0].x > 1 && projpos[1].x > 1 && projpos[2].x > 1 && projpos[3].x > 1);
+    doIclip = doIclip || (projpos[0].y > 1 && projpos[1].y > 1 && projpos[2].y > 1 && projpos[3].y > 1);
+
+    if(clip_count == 4 || doIclip){ // si le tet est pas dedans pour l'instant on fait rien
+        return;
+    }
+
+    if(clip_count == 0){
+        int tetId = atomicAdd(temptetNumber,1);
+        temp_indices[tetId] = indice;
+        return;
+    }
+
+    // sinon, on a des points a cliper
+
+    // on commence par calculer la position de nos nouveaux points
+    bool edgeClip[6];
+    vec4 clipPoint[6]; VA clipPointD[6];
+    vec4 otherPoint[6]; VA otherPointD[6];
+    for(int i = 0; i< 6; i++ ){
+        int i0 =  edges[i][0];
+        int i1 =  edges[i][1];
+        edgeClip[i] = (clip[i0] && !clip[i1]) || (!clip[i0] && clip[i1]);
+        if(edgeClip[i]){
+            vec4 a = clip[i0] ? tet.pos[i0] : tet.pos[i1]; VA da = clip[i0] ? tet.s[i0] : tet.s[i1];
+            vec4 b = clip[i0] ? tet.pos[i1] : tet.pos[i0]; VA db = clip[i0] ? tet.s[i1] : tet.s[i0];
+
+            float t = (near - a.z) / (b.z - a.z);
+            clipPoint[i] = a + (b-a)*t; clipPointD[i] = interpolation(da, db, t);
+            otherPoint[i] = b; otherPointD[i] = db;
+        }
+    }
+
+    int tetCount = 0;
+    
+    if(clip_count == 1){
+        //one clip : prism
+        // on veut générer 3 autres tet du coup
+        int tetId = atomicAdd(temptetNumber,3);
+        int vertId = atomicAdd(vertNumber,6);
+        prism_t p;
+        int count = 0;
+        for(int i = 0; i< 6; i++ ){
+            if(edgeClip[i]){
+                p.pos[count] = clipPoint[i]; p.s[count] = clipPointD[i];
+                p.pos[count+3] = otherPoint[i]; p.s[count+3] = otherPointD[i];
+                count++;
+            }
+        }
+        //debugPrintfEXT("Cas 1 : \n");
+        for(int i = 0; i < 6; i++){
+            vertices[vertId+i] = ivm * p.pos[i];
+            attributs[vertId+i] = p.s[i];
+
+            //debugPrintfEXT("v%i : %v4f\n",vertId+i, vertices[vertId+i]);
+        }
+        
+        // on enregistre les 3 tets
+        temp_indices[tetId] = uvec4(vertId,vertId+1,vertId+2,vertId+3);
+        temp_indices[tetId+1] = uvec4(vertId+1,vertId+2,vertId+3,vertId+5);
+        temp_indices[tetId+2] = uvec4(vertId+1,vertId+3,vertId+4,vertId+5);
+
+    }
+    
+    else if(clip_count == 2){
+        //two clip : prism
+        int tetId = atomicAdd(temptetNumber,3);
+        int vertId = atomicAdd(vertNumber,6);
+        
+        prism_t p;
+        int countNoClip = 0;
+        int noclip[2];
+        int cliped[2];
+        int countClip = 0;
+        for(int i = 0; i< 4; i++ ){
+            if(!clip[i]){
+                p.pos[countNoClip*3] = tet.pos[i]; p.s[countNoClip*3] = tet.s[i];
+                noclip[countNoClip] = i;
+                countNoClip++;
+            }else{
+                cliped[countClip] = i;
+                countClip++;
+            }
+        }
+
+        if(cliped[1]<cliped[0]){
+            int tmp = cliped[0];
+            cliped[0] = cliped[1];
+            cliped[1] = tmp;
+        }
+
+        for(int i = 0; i< 6; i++ ){
+            if(edgeClip[i]){
+               bool eNoClip1 = edges[i][0] == noclip[1] || edges[i][1] == noclip[1];
+               bool eCliped1 = edges[i][0] == cliped[1] || edges[i][1] == cliped[1];
+
+               int index = int(eNoClip1) * 3  +  int(eCliped1) +1; 
+
+               p.pos[index] = clipPoint[i]; p.s[index] = clipPointD[i];
+            }
+        }
+
+        for(int i = 0; i < 6; i++){
+            vertices[vertId+i] = ivm * p.pos[i];
+            attributs[vertId+i] = p.s[i];
+        }
+
+        // on enregistre les 3 tets
+        temp_indices[tetId] = uvec4(vertId,vertId+1,vertId+2,vertId+3);
+        temp_indices[tetId+1] = uvec4(vertId+1,vertId+2,vertId+3,vertId+5);
+        temp_indices[tetId+2] = uvec4(vertId+1,vertId+3,vertId+4,vertId+5);
+    }
+    
+    else if(clip_count == 3){
+        //three clip : prism
+        int tetId = atomicAdd(temptetNumber,1);
+
+        tet_t temp;
+        int count = 0;
+        for(int i = 0; i< 6; i++ ){
+            if(edgeClip[i]){
+                temp.pos[count] = clipPoint[i]; temp.s[count] = clipPointD[i];
+                count ++;
+            }
+        }
+        for(int i = 0; i< 4; i++ ){
+            if(!clip[i]){
+                temp.pos[count] = tet.pos[i]; temp.s[count] = tet.s[i];
+            }
+        }
+        int vertId = atomicAdd(vertNumber,4);
+        for(int i = 0; i < 4; i++){
+            vertices[vertId+i] = ivm * temp.pos[i];
+            attributs[vertId+i] = temp.s[i];
+        }
+        temp_indices[tetId] = uvec4(vertId,vertId+1,vertId+2,vertId+3);
+    }
+    
+    debugPrintfEXT("%i %i %i %i\n", tetNumber, vertNumber, temptetNumber, temptemptetNumber);
+
+
+}

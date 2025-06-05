@@ -1,0 +1,43 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#define N 256
+
+layout( local_size_x = N) in;
+
+layout(set = 0, binding = 0) uniform uni{
+    uint n;
+    uint k;
+    uint j;
+};
+
+layout( set = 0, binding = 1 ) buffer list{
+  vec4 z;
+};
+
+void main(){
+    uint lId = gl_LocalInvocationID.x;
+    uint gId = gl_WorkGroupID.x;
+    uint i = N*gId + lId;
+
+    uint l = i ^ j;
+    if (l <= i) return;
+    if (l >= n) return;
+
+    float z1 = z[i];
+    float z2 = z[l];
+
+    bool t = (i & k) == 0;
+    
+    if (t && z2 < z1){
+        z[i] = z2;
+        z[l] = z1;
+    }
+    if (!t && z2 > z1){
+        z[i] = z2;
+        z[l] = z1;
+    }
+
+    //debugPrintfEXT("%i\n", n);
+
+}

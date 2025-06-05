@@ -1,0 +1,44 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+//#define IWANTINSIDE
+
+#include"../commun.glsl"
+
+
+layout( local_size_x = 1) in;
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model; //inutile mais je garde pour l'instant
+  mat4 view;
+  mat4 persp;
+  float nearplane;
+};
+
+layout( set = 0, binding = 1) buffer info{
+  int tetNumber;
+  int vertNumber;
+};
+
+layout( set = 0, binding = 2 ) buffer pos{
+  vec4 vertices[];
+};
+
+layout( set = 0, binding = 3 ) buffer ind{
+  uvec4 indices[];
+};
+
+
+void main() {
+  if (gl_WorkGroupID.x > 0) return;
+
+  int indice = atomicAdd(tetNumber,1);
+  int vertId = atomicAdd(vertNumber,4);
+  vertices[vertId] = vec4(-1,-1,-1,1);
+  vertices[vertId+1] = vec4(-1,1,-1,1);
+  vertices[vertId+2] = vec4(-1,0,1,1);
+  vertices[vertId+3] = vec4(1,0,0,1);
+  indices[indice] = uvec4(vertId, vertId+1,vertId+2,vertId+3);
+
+
+}

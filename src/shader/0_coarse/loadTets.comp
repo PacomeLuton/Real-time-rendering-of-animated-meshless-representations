@@ -1,0 +1,51 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+layout( local_size_x = 128) in;
+
+layout( set = 0, binding = 1) buffer info{
+  int tetNumber;
+  int vertNumber;
+  int temptetNumber;
+  int temptemptetNumber;
+};
+
+layout( set = 0, binding = 3) buffer ind{
+  uvec4 indices[];
+};
+
+layout( set = 0, binding = 7 ) buffer opos{
+  vec4 overtices[];
+};
+
+layout( set = 0, binding = 10 ) buffer oind{
+  uvec4 oindices[];
+};
+
+void main() {
+  uint lId = gl_LocalInvocationID.x;
+  uint gId = gl_WorkGroupID.x;
+  uint ix = 128*gId + lId;
+
+  if (ix >= temptemptetNumber) return;
+
+  uvec4 ind = oindices[ix];
+  
+  vec3 a = overtices[ind.x].xyz;
+  vec3 b = overtices[ind.y].xyz;
+  vec3 c = overtices[ind.z].xyz;
+  vec3 d = overtices[ind.w].xyz;
+
+  float delta = max(max(max(max(max(length(a-b),length(a-c)),length(a-d)),length(b-c)),length(b-d)),length(c-d))/2;
+
+  vec4 dist = vec4(map(a),map(b),map(c),map(d));
+
+  //if (abs(dist.x)<delta || abs(dist.y)<delta || abs(dist.z)<delta || abs(dist.w)<delta){
+  if (true){
+    int tetIndice = atomicAdd(tetNumber,1);
+    indices[tetIndice] = oindices[ix];
+  }
+
+}

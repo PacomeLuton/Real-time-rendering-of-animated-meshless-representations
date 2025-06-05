@@ -1,0 +1,28 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+layout( local_size_x = 128) in;
+
+layout( set = 0, binding = 1) buffer info{
+  int tetNumber;
+  int vertNumber;
+};
+
+layout( set = 0, binding = 2 ) buffer pos{
+  vec4 vertices[];
+};
+
+layout( set = 0, binding = 7 ) buffer opos{
+  vec4 overtices[];
+};
+
+void main() {
+  
+  uint lId = gl_LocalInvocationID.x;
+  uint gId = gl_WorkGroupID.x;
+  uint ix = 128*gId + lId;
+
+  if (ix >= vertNumber) return;
+
+  vertices[ix] = overtices[ix];
+}

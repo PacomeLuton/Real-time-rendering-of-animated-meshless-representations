@@ -1,0 +1,4 @@
+[submodule "LavaCake"]
+	path = LavaCake
+	url = https://github.com/PacomeLuton/LavaCake.git
+	branch = beta-1.4

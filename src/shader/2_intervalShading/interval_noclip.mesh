@@ -1,0 +1,282 @@
+#version 450
+#extension GL_EXT_mesh_shader : require
+
+#include "../commun.glsl"
+
+struct potage {
+    VA s[2];
+};
+
+layout (location=0) out vec4 A[];
+layout (location=1) out int I[];
+layout (location=2) out potage D[];
+
+#define X 5
+
+layout(local_size_x = X, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 5, max_primitives = 5) out;
+
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model;
+  mat4 view;
+  mat4 persp;
+  float nearplane;
+};
+
+layout( set = 0, binding = 2 ) buffer vertices{
+  vec4 coords[];
+};
+
+layout( set = 0, binding = 6 ) buffer indices{
+  uvec4 tet[];
+};
+
+layout( set = 0, binding = 4 ) buffer vertAttribut{
+  VA attributs[];
+};
+
+struct tet_t{
+  vec4 pos[4];
+  vertexAttribut s[4];
+};
+
+struct prism_t{
+  vec4 pos[6];
+  vertexAttribut s[6];
+};
+
+
+
+
+layout( set = 0, binding = 3 ) buffer info {
+    int tetNumber;
+};
+
+ivec2 edges[] = {
+  ivec2(0,1),  //0
+  ivec2(0,2),  //1
+  ivec2(0,3),  //2
+  ivec2(1,2),  //3
+  ivec2(1,3),  //4
+  ivec2(2,3)   //5
+};
+
+
+float cross2D(vec2 v1, vec2 v2)
+{
+    return v1.x * v2.y - v1.y * v2.x;
+}
+
+
+//Line intersection algorithm
+//Based off Andre LeMothe's algorithm in "Tricks of the Windows Game Programming Gurus".
+bool lineIntersection(vec2 L1A, vec2 L1B, vec2 L2A, vec2 L2B, out vec2 p, out vec2 ts)
+{
+    //Line 1 Vector
+    vec2 v1 = L1B - L1A;
+    
+    //Line 2 Vector
+    vec2 v2 = L2B - L2A;
+    
+    //Cross of vectors
+    float d = cross2D(v1,v2);
+    
+    //Difference between start points
+    vec2 LA_delta = L1A - L2A;
+    
+    //Percentage v1 x LA_delta is along v1 x v2
+    float s = cross2D(v1,LA_delta) / d;
+    
+    //Percentage v2 x LA_delta is along v1 x v2
+    float t = cross2D(v2,LA_delta) / d;
+    
+    //Do segments intersect?
+    //Bounds test
+    if (s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0)
+    {
+        //Projection
+        p = vec2(L1A.x + (t * v1.x), L1A.y + (t * v1.y)); 
+        ts = vec2(t,s);
+        return true;
+    }
+    return false;
+}
+
+struct proxy_t{
+    vec4[5] pos;
+    vertexAttribut[5][2] s;
+    int point_count;
+};
+
+ivec2 potential_projection[] = { 
+  ivec2( 0 , 3 ),
+  ivec2( 1 , 2 ),
+  ivec2( 2 , 1 ),
+  ivec2( 3 , 0 ),
+};
+
+#define potentialProjection 4
+
+
+ivec2 potential_intersection[] = { 
+  ivec2( 0 , 5 ),
+  ivec2( 1 , 4 ),
+  ivec2( 2 , 3 ),
+};
+#define potentialCrossing 3
+//index of vertices of each face of a tet
+uvec3 faces[] = {
+  uvec3(0,1,2),
+  uvec3(0,1,3),
+  uvec3(0,2,3),
+  uvec3(1,2,3)
+};
+
+shared proxy_t proxie;
+
+void main(){
+    int id = int(gl_LocalInvocationID.x);
+    uint tetIndex = gl_WorkGroupID.x;
+    uvec4 indices =  tet[tetIndex];
+
+    tet_t tet;
+
+    // pour les 4 points du tetraedre, on calcul la position dans view, et on stock la deformation a ssocié
+    for(int i = 0; i < 4; i++){
+        tet.pos[i] = view * model * coords[indices[i]];
+        tet.s[i] = attributs[indices[i]];
+        //tet.s[i].repere = repere[indices.index[i]];
+    }
+
+    // Si besoin, on clip notre tétraedre, et on en obtient plusieurs nouveau
+    float bias = nearplane*0.1; 
+
+    
+    
+    // pour chaque tétraedre
+        
+        //project all point, et on pre projete aussi les attribut
+        for(int j = 0; j < 4; j ++){
+            tet.pos[j] = persp * tet.pos[j];
+            tet.s[j] = divise(tet.s[j], tet.pos[j].w); //on predivise nos valeur par w
+            tet.pos[j] = tet.pos[j]/tet.pos[j].w;
+        }
+        
+        int nb_triangle = 0;
+
+
+        // First test projection : On test d'abord si on peut diviser le tet en 3 triangle (un point est dans les autres)
+        for(int j = 0; j < potentialProjection; j ++){
+            vec4 p = tet.pos[potential_projection[j][0]]; VA dp = tet.s[potential_projection[j][0]];
+            
+            
+            uint faceID = potential_projection[j][1];
+            vec4 a = tet.pos[faces[faceID][0]]; VA da = tet.s[faces[faceID][0]];
+            vec4 b = tet.pos[faces[faceID][1]]; VA db = tet.s[faces[faceID][1]];
+            vec4 c = tet.pos[faces[faceID][2]]; VA dc = tet.s[faces[faceID][2]];
+
+            vec2 v0 = b.xy - a.xy; 
+            vec2 v1 = c.xy - b.xy; 
+            vec2 v2 = a.xy - c.xy;
+
+            float s0 = cross2D ( p.xy - a.xy, v0);
+            float s1 = cross2D ( p.xy - b.xy, v1);
+            float s2 = cross2D ( p.xy - c.xy, v2);
+
+            bool isInside = (s0 >= 0 && s1 >= 0 && s2 >= 0) || (s0 <= 0 && s1 <= 0 && s2 <= 0);
+            //inside with borders
+            if(isInside){
+
+                float s = s0+s1+s2;
+                float lambda0 = s1/s;
+                float lambda1 = s2/s;
+                float lambda2 = s0/s;
+
+                float z_ = lambda0 * a.z + lambda1 * b.z + lambda2 * c.z; // on interpole correctement le z 
+                VA d_ = barycentre(da, db, dc, lambda0, lambda1, lambda2); // on interpole les vertex attributs
+
+                nb_triangle = 3;
+
+                proxie.pos[0] = a.xyzz; proxie.s[0][0] = da; proxie.s[0][1] = da; //on stock pour chaque sommet la porjection qui correspond
+                proxie.pos[1] = b.xyzz; proxie.s[1][0] = db; proxie.s[1][1] = db;
+                proxie.pos[2] = c.xyzz; proxie.s[2][0] = dc; proxie.s[2][1] = dc;
+                
+                if (p.z < z_){
+                    proxie.pos[3] = vec4(p.xyz,z_);
+                    proxie.s[3][0] = dp;
+                    proxie.s[3][1] = d_;
+                }else{
+                    proxie.pos[3] = vec4(p.xy,z_,p.z);
+                    proxie.s[3][0] = d_;
+                    proxie.s[3][1] = dp;
+                }
+
+                proxie.point_count = 4;
+            }
+        }        
+
+        if (nb_triangle == 0)
+        for(int j =0; j < potentialCrossing; j++){
+            vec4 l0a = tet.pos[edges[potential_intersection[j][0]][0]]; VA d0a = tet.s[edges[potential_intersection[j][0]][0]];
+            vec4 l0b = tet.pos[edges[potential_intersection[j][0]][1]]; VA d0b = tet.s[edges[potential_intersection[j][0]][1]];
+            vec4 l1a = tet.pos[edges[potential_intersection[j][1]][0]]; VA d1a = tet.s[edges[potential_intersection[j][1]][0]];
+            vec4 l1b = tet.pos[edges[potential_intersection[j][1]][1]]; VA d1b = tet.s[edges[potential_intersection[j][1]][1]];
+
+            vec2 p;
+            vec2 t;
+            if(lineIntersection(l0a.xy,l0b.xy,l1a.xy,l1b.xy,p,t)){
+
+                
+                float z0 = l0a.z *(1.0-t[0]) + l0b.z * t[0] ; VA d0 = interpolation(d0a, d0b, t[0]);
+                float z1 = l1a.z *(1.0-t[1]) + l1b.z * t[1] ; VA d1 = interpolation(d1a, d1b, t[1]);
+
+
+                proxie.pos[0] = l0a.xyzz; proxie.s[0][0] = d0a; proxie.s[0][1] = d0a;
+                proxie.pos[1] = l1a.xyzz; proxie.s[1][0] = d1a; proxie.s[1][1] = d1a;
+                proxie.pos[2] = l0b.xyzz; proxie.s[2][0] = d0b; proxie.s[2][1] = d0b;
+                proxie.pos[3] = l1b.xyzz; proxie.s[3][0] = d1b; proxie.s[3][1] = d1b;
+                if (z0 > z1){
+                    proxie.pos[4] = vec4(p.xy,z1,z0);
+                    proxie.s[4][0] = d1;
+                    proxie.s[4][1] = d0;
+                }else{
+                    proxie.pos[4] = vec4(p.xy,z0,z1);
+                    proxie.s[4][0] = d0;
+                    proxie.s[4][1] = d1;
+                }
+                proxie.point_count = 5;
+                nb_triangle = 4;
+            }
+        }
+
+
+    int vertex_counter = 0;
+    int triangle_counter = 0;
+
+    //for(int j = 0 ; j < proxie.point_count; j ++){
+        gl_MeshVerticesEXT[vertex_counter + id].gl_Position = vec4(proxie.pos[id].xy,0,1);
+        A[vertex_counter + id] = vec4(proxie.pos[id].xy,proxie.pos[id].z,proxie.pos[id].w);
+        potage soupe; soupe.s[0] = proxie.s[id][0]; soupe.s[1] = proxie.s[id][1];
+        D[vertex_counter + id] = soupe;
+        I[vertex_counter + id] = int(gl_WorkGroupID.x);
+    //}
+
+    if(proxie.point_count == 4){
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(0,1,3) + vertex_counter;
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(1,2,3) + vertex_counter;
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(2,0,3) + vertex_counter;
+    }
+    else if(proxie.point_count == 5){
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(0,1,4) + vertex_counter;
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(1,2,4) + vertex_counter;
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(2,3,4) + vertex_counter;
+        gl_PrimitiveTriangleIndicesEXT[triangle_counter++]   = uvec3(3,0,4) + vertex_counter;
+    }
+    
+    vertex_counter += proxie.point_count;
+    
+
+    SetMeshOutputsEXT(vertex_counter ,triangle_counter);
+
+}

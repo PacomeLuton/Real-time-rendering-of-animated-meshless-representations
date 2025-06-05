@@ -1,0 +1,106 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+#define nbPoids 30
+
+layout( local_size_x = 512) in;
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model; //inutile mais je garde pour l'instant
+  mat4 view;
+  mat4 persp;
+  float nearplane;
+};
+
+layout( set = 0, binding = 1 ) buffer info{
+  int tetNumber;
+  int vertNumber;
+};
+
+layout( set = 0, binding = 2 ) buffer pos{
+  vec4 vertices[];
+};
+
+layout( set = 0, binding = 4 ) buffer vertAttribut{
+  VA attributs[];
+};
+
+layout( set = 0, binding = 5 ) uniform guibuffer {
+  float time;
+  vec2 thetaPhi;
+};
+
+layout( set = 0, binding = 8 ) buffer animation{
+  float poids[];
+};
+
+layout( set = 0, binding = 9 ) uniform matrixAnim{
+  mat4 matAnim[nbPoids];
+};
+
+//layout( set = 0, binding = 13 ) buffer fire{
+//  vec4 ocpos[];
+//};
+
+vec4 deformation(vec4 p, uint id){
+  vec4 res = vec4(0);
+  float somme = 0;
+
+  for(int i = 0; i < nbPoids; i++){
+    vec4 localpos = matAnim[i] * p;
+    res += localpos * poids[nbPoids*id+i];
+    somme += poids[nbPoids*id+i];
+  }
+  res /= somme;
+  //res = p;
+  return res;
+}
+
+mat3 makeRepere(vec4 p, uint id){
+  float epsilon = 0.0001;
+  vec3 f0 = deformation(p, id).xyz;
+  vec3 fx = (deformation(p+vec4(epsilon,0,0,0), id).xyz - f0) / epsilon;
+  vec3 fy = (deformation(p+vec4(0,epsilon,0,0), id).xyz - f0) / epsilon;
+  vec3 fz = (deformation(p+vec4(0,0,epsilon,0), id).xyz - f0) / epsilon;
+
+  return mat3(fx,fy,fz);
+}
+
+
+void main() {
+  uint lid = gl_LocalInvocationID.x;
+  uint wid = gl_WorkGroupID.x;
+
+  uint id = 512*wid + lid;
+
+  //if (id == 0)   debugPrintfEXT("%f\n",time);
+
+  if(id >= vertNumber) return;
+
+  vec4 prev = vertices[id];
+
+  vec4 neww = deformation(prev, id);
+
+  vertices[id] = neww;
+
+  float somme = 0;
+  for(int i = 0; i < nbPoids; i++){
+    somme += poids[id*nbPoids+i];
+  }
+
+  //VA attrib = VA((prev - neww).xyz,makeRepere(prev, id));
+  //VA attrib = VA((prev - neww).xyz,makeRepere(prev));
+  VA attrib;
+  attrib.uvw = (prev - neww).xyz;
+  attrib.repere = makeRepere(prev,id);
+
+  mat4 repereP4 = mat4(vec4(attrib.repere[0],0), vec4(attrib.repere[1],0), vec4(attrib.repere[2],0), vec4(0,0,0,1));
+  //if (time < 0.1) ocpos[id] = prev;
+  //else ocpos[id] = ocpos[id] - transpose(model*repereP4) * vec4(0,0,0.001,0);
+
+  //attrib.cpos = ocpos[id].xyz;
+  attributs[id] = attrib;
+
+}

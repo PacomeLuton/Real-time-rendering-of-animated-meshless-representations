@@ -1,0 +1,28 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+layout( local_size_x = 1) in;
+
+layout( set = 0, binding = 5 ) uniform guibuffer {
+  float time;
+  vec2 thetaPhi;
+};
+
+layout( set = 0, binding = 11) uniform writeonly image3D voxelGrid;
+
+void main() {
+    ivec3 idd = ivec3(gl_WorkGroupID.xyz);
+    vec3 pos = vec3(idd) / vec3(gl_NumWorkGroups.xyz-1) * vec3(2,2,2) - vec3(1,1,1); 
+
+    vec4 color = vec4((pos+1)/2,0);
+
+    float d = map(pos);
+    if (d < 0) color = vec4(0,10,0,1);
+    if (d < -0.01) color = vec4(1,0,0,1);
+    if (d >= 0) color = vec4(0);
+
+    imageStore(voxelGrid,idd,color);
+
+}

@@ -1,0 +1,50 @@
+#version 450
+#extension GL_EXT_mesh_shader : require
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 3, max_primitives = 1) out;
+
+layout (location=0) out vec4 normal[];
+layout (location=1) out vec4 pos[];
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model;
+  mat4 view;
+  mat4 persp;
+};
+
+struct vertex{
+    float posx;
+    float posy;
+    float posz;
+    float nx;
+    float ny;
+    float nz;
+};
+
+layout( set = 0, binding = 1) buffer meshs {
+    vertex mesh[];
+};
+
+layout( set = 0, binding = 2) buffer indices {
+    int indice[];
+};
+
+void main(){
+    int triangleId = int(gl_WorkGroupID.x);
+
+    mat4 mvp = persp * view * model;
+    mat4 nmvp = transpose(inverse(model));
+
+    for(int i = 0; i < 3; i++){
+        int vertId = indice[3*triangleId+i];
+        pos[i] = mvp*vec4(mesh[vertId].posx,mesh[vertId].posy,mesh[vertId].posz,1);
+        gl_MeshVerticesEXT[i].gl_Position = pos[i];
+        normal[i] = nmvp * vec4(mesh[vertId].nx,mesh[vertId].ny,mesh[vertId].nz,0);
+    }
+
+    gl_PrimitiveTriangleIndicesEXT[0] = uvec3(0,1,2);
+
+    SetMeshOutputsEXT(3 ,1);
+}

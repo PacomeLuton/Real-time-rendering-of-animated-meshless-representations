@@ -1,0 +1,106 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#define IWANTINSIDE
+
+#include"../commun.glsl"
+
+
+layout( local_size_x = 8) in;
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model; //inutile mais je garde pour l'instant
+  mat4 view;
+  mat4 persp;
+  float nearplane;
+};
+
+layout( set = 0, binding = 1) buffer info{
+  int tetNumber;
+  int vertNumber;
+};
+
+layout( set = 0, binding = 2 ) buffer pos{
+  vec4 vertices[];
+};
+
+layout( set = 0, binding = 3 ) buffer ind{
+  uvec4 indices[];
+};
+
+
+bool impair = false;
+
+vec3 indiceCube(uint i){
+  if (impair) i = i ^ 7;
+  return vec3(i%2, (i/2)%2, i/4);
+}
+
+const uvec4 cubeTet[5] = {
+  {0,1,2,4},
+  {3,2,1,7},
+  {5,4,7,1},
+  {6,4,2,7},
+  {4,1,2,7}
+};
+
+shared float dist[8]; 
+shared bool insideLarge[8];
+shared bool insideSmall[8];
+shared vec3 position[8];
+
+bool teste(uvec4 sommets){
+  bool inside = insideLarge[sommets.x] || insideLarge[sommets.y] || insideLarge[sommets.z] || insideLarge[sommets.w];
+  bool reallyinside = insideSmall[sommets.x] && insideSmall[sommets.y] && insideSmall[sommets.z] && insideSmall[sommets.w];
+
+  #ifdef IWANTINSIDE
+    return inside;
+  #endif
+
+  return inside && !reallyinside;
+}
+
+
+void main() {
+  ivec3 id = ivec3(gl_LocalInvocationID.xyz);
+  ivec3 idd = ivec3(gl_WorkGroupID.xyz);
+  vec3 pos = vec3(idd) / vec3(gl_NumWorkGroups.xyz-1) * vec3(2,2,2) - vec3(1,1,1); 
+  vec3 dx = 1. / vec3(gl_NumWorkGroups.xyz-1) * vec3(2,2,2);
+  float d = max(max(dx.x, dx.y),dx.z) * sqrt(2)/2.;
+
+  impair = ((idd.x + idd.y + idd.z) % 2) == 1;
+
+  //on calcul la distance à la surface dans chacun des sommet du tetraedre
+  uint ix = id.x;
+  if (ix < 8){
+  //for(uint ix = 0; ix < 8; ix++){
+    position[ix] = pos + indiceCube(ix)*dx;
+    dist[ix] = map(position[ix]);
+    insideLarge[ix] = dist[ix] < d;
+    insideSmall[ix] = dist[ix] < -d;
+  }
+
+  barrier();
+  groupMemoryBarrier();
+
+  uint tetId = id.x;
+  if(tetId < 5){
+  //for(int tetId = 0; tetId < 5; tetId++){
+    uvec4 sommets = cubeTet[tetId];
+
+    if (teste(sommets)){
+      int indice = atomicAdd(tetNumber,1);
+      int vertId = atomicAdd(vertNumber,4);
+      vertices[vertId] = vec4(position[sommets.x],1);
+      vertices[vertId+1] = vec4(position[sommets.y],1);
+      vertices[vertId+2] = vec4(position[sommets.z],1);
+      vertices[vertId+3] = vec4(position[sommets.w],1);
+      indices[indice] = uvec4(vertId, vertId+1,vertId+2,vertId+3);
+
+      //debugPrintfEXT("%v3i : %i\n",gl_WorkGroupID.xyz,indice);
+
+      if (indice > 5 * (gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z)) debugPrintfEXT("%v3i\n",gl_WorkGroupID.xyz);
+    }
+  }
+
+}

@@ -1,0 +1,78 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+layout( local_size_x = 512) in;
+
+layout( set = 0, binding = 0 ) uniform UniformBuffer {
+  mat4 model; //inutile mais je garde pour l'instant
+  mat4 view;
+  mat4 persp;
+  float nearplane;
+};
+
+layout( set = 0, binding = 1 ) buffer info{
+  int tetNumber;
+  int vertNumber;
+};
+
+layout( set = 0, binding = 2 ) buffer pos{
+  vec4 vertices[];
+};
+
+layout( set = 0, binding = 4 ) buffer vertAttribut{
+  VA attributs[];
+};
+
+layout( set = 0, binding = 5 ) uniform guibuffer {
+  float time;
+  vec2 thetaPhi;
+};
+
+
+#define PI2 6.28318530718
+
+vec4 deformation(vec4 p){
+  mat4 rotation = mat4(vec4(cos(time),sin(time),0,0),
+                        vec4(-sin(time),cos(time),0,0),
+                        vec4(0,0,1,0),
+                        vec4(0,0,0,1));
+  //return rotation*vec4(p.x, p.y+0.1*sin(20*p.x), p.z, 1);
+  return vec4(p.x, p.y+0.1*sin(10*p.x + mod(10*time,PI2)), p.z, 1);
+  //return vec4(p.x,p.y,p.z+ 0.1*sin(10*p.x + mod(10*time,PI2)),1);
+  //return rotation*vec4(p.xyz,1);
+  return p;
+}
+
+mat3 makeRepere(vec4 p){
+  float epsilon =  0.0001;
+  vec3 f0 = deformation(p).xyz;
+  vec3 fx = (deformation(p+vec4(epsilon,0,0,0)).xyz - f0) / epsilon;
+  vec3 fy = (deformation(p+vec4(0,epsilon,0,0)).xyz - f0) / epsilon;
+  vec3 fz = (deformation(p+vec4(0,0,epsilon,0)).xyz - f0) / epsilon;
+
+  return mat3(fx,fy,fz);
+}
+
+
+void main() {
+  uint lid = gl_LocalInvocationID.x;
+  uint wid = gl_WorkGroupID.x;
+
+  uint id = 512*wid + lid;
+
+  //if (id == 0)   debugPrintfEXT("%f\n",time);
+
+  if(id >= vertNumber) return;
+
+  vec4 prev = vertices[id];
+  vec4 neww = deformation(prev);
+
+  vertices[id] = neww;
+  VA attrib;
+  attrib.uvw = (prev - neww).xyz;
+  attrib.repere = makeRepere(prev);
+  attributs[id] = attrib;
+
+}

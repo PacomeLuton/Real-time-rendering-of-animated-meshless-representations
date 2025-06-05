@@ -1,0 +1,21 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+layout( local_size_x = 1) in;
+
+layout( set = 0, binding = 0) buffer store{
+    float dist[];
+};
+
+void main() {
+    ivec3 idd = ivec3(gl_WorkGroupID.xyz);
+    vec3 pos = vec3(idd) / vec3(gl_NumWorkGroups.xyz-1) * vec3(2,2,2) - vec3(1,1,1); 
+
+    uint id = (idd.x * gl_NumWorkGroups.y + idd.y) * gl_NumWorkGroups.z + idd.z; 
+    //dist[id] = mapArlo(pos*4).x/4-0.019;
+
+    vec3 matinfo;
+    dist[id]  = mapArlo(pos*4.0).x/4.0 - 0.019;
+}

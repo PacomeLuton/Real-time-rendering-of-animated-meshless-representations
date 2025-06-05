@@ -1,0 +1,53 @@
+#version 450
+#extension GL_EXT_debug_printf : enable
+
+#include"../commun.glsl"
+
+#define N 8
+
+layout( local_size_x = N, local_size_y = N, local_size_z = N) in;
+
+layout( set = 0, binding = 5 ) uniform guibuffer {
+  float time;
+  vec2 thetaPhi;
+};
+
+layout( set = 0, binding = 11) uniform writeonly image3D voxelGrid;
+layout( set = 0, binding = 12) uniform writeonly image3D movingvoxelGrid;
+
+float cmap(vec3 pos){
+    float d1 = mapArlo(pos*4).x/4;
+    float d2 = (fbm(ivec3(40), 4, (pos+1)/2)+0.2);
+    if (d1 > 0) return ((d1 + smootherstep(0.1,0.,min(d1/0.019,1))*d2)/4);
+    return ((d1+0.1*d2)/4);
+}
+
+vec3 cmap_normal(vec3 p){
+    float dx = 1./(gl_NumWorkGroups.x*N);
+    vec3 n = vec3(0);
+    float mp = cmap(p);
+    n.x = (mp - cmap(p-vec3(dx,0,0)))/dx;
+    n.y = (mp - cmap(p-vec3(0,dx,0)))/dx;
+    n.z = (mp - cmap(p-vec3(0,0,dx)))/dx;
+    return normalize(n); 
+}
+
+vec3 colorR(ivec3 id){
+    return randColor(16486*id.x^3542*id.y + 13425*id.z);
+}
+
+void main() {
+    ivec3 lId = ivec3(gl_LocalInvocationID);
+    ivec3 gId = ivec3(gl_WorkGroupID.xyz);
+    ivec3 idd = gId*N+lId;
+    vec3 pos = vec3(idd) / vec3(gl_NumWorkGroups.xyz*N-1) * vec3(2,2,2) - vec3(1,1,1); 
+
+    vec4 color = vec4(cmap(pos));
+    imageStore(voxelGrid,idd,color);
+
+    //vec3 normal = pos; //cmap_normal(pos);
+    //vec3 normal = colorR(idd);
+    vec3 normal = cmap_normal(pos);
+    imageStore(movingvoxelGrid,idd,vec4(normal,0));
+
+}
