@@ -24,16 +24,16 @@ make -j
 ## Testing
 
 Then you can run the different examples from the paper:
-+ 0_ArloSDF
-+ 1_AnimatedCage
-+ 2_AnimatedSDF
-+ 3_AnimatedVoxel
-+ 4_AnimatedFBM
-+ 5_AnimatedDynamicFBM
-+ 6_AnimatedDensityField
-+ 7_SelfIntersection
-+ 8_IntegrationWithTriangle
-+ 9_WiggleArlo
++ 0_ArloSDF (*figure 10*)
++ 1_AnimatedCage 
++ 2_AnimatedSDF 
++ 3_AnimatedVoxel (*figure 1*) 
++ 4_AnimatedFBM (*figure 9*)
++ 5_AnimatedDynamicFBM (*figure 9*)
++ 6_AnimatedDensityField (*figure 8*)
++ 7_SelfIntersection (*figure 7*)
++ 8_IntegrationWithTriangle (*figure 6*)
++ 9_WiggleArlo (*figure 5*)
 
 ## Citing
 
