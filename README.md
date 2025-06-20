@@ -1,4 +1,10 @@
 # Real-time rendering of animated meshless representations
+![Tux, the Linux mascot](teaser.png)
+
+This repository contains the source code for reproducing the results presented in the article "Real-time rendering of animated meshless representations" available at: https://hal.science/hal-05095359v1
+
+Supplemental video available at : https://www.youtube.com/watch?v=6lKAvxV2mno
+
 
 
 ## Dependency
@@ -38,4 +44,20 @@ Then you can run the different examples from the paper:
 
 ## Citing
 
-https://hal.science/hal-05095359v1
+To cite our article :
+```
+@inproceedings{luton:hal-05095359,
+  TITLE = {{Real-time rendering of animated meshless representations}},
+  AUTHOR = {Luton, Pac{\^o}me and Tricard, Thibault},
+  URL = {https://hal.science/hal-05095359},
+  BOOKTITLE = {{HPG  2025 - Conference on High Performance Graphics}},
+  ADDRESS = {Copenhague, Denmark},
+  PAGES = {1-9},
+  YEAR = {2025},
+  MONTH = Jun,
+  KEYWORDS = {Animation ; Rasterization},
+  PDF = {https://hal.science/hal-05095359v1/file/Real_time_rendering_of_animated_meshless_representation_HPG25-3.pdf},
+  HAL_ID = {hal-05095359},
+  HAL_VERSION = {v1},
+}
+```
