@@ -7,8 +7,9 @@ This project can be run a un Ubuntu 22, your GPU need to be mesh shader compatib
 + CMake
 + Vulkan SDK (1.3.239 or newer)
 + GLFW3
++ GLM
 
-To install apt depency you can run: `sudo apt install build-essential libvulkan-dev glslc libglfw3-dev libxinerama-dev libxcursor-dev libxi-dev`
+To install apt depency you can run: `sudo apt install build-essential libvulkan-dev glslc libglfw3-dev libxinerama-dev libxcursor-dev libxi-dev libglm-dev`
 
 
 ## Compiling 
