@@ -1,5 +1,5 @@
 # Real-time rendering of animated meshless representations
-![Tux, the Linux mascot](teaser.png)
+![teaser](teaser.png)
 
 This repository contains the source code for reproducing the results presented in the article "Real-time rendering of animated meshless representations" available at: https://hal.science/hal-05095359v1
 
